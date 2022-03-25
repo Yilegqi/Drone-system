@@ -47,6 +47,14 @@ def on_message(client, userdata, message):
         time.sleep (int (seconds))
         LEDSequenceOn = False
 
+    if message.topic == 'LEDsControllerCommand/LEDsSequenceWhenRecognizePicture':
+        print('Picture recognized, LEDs sequence on')
+        LEDSequenceOn = True
+        w = threading.Thread(target=LEDSequence)
+        w.start()
+        time.sleep(3)
+        LEDSequenceOn = False
+
 
 client = mqtt.Client("LED controller")
 client.on_message = on_message

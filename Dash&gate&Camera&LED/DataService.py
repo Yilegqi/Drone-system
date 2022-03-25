@@ -22,7 +22,7 @@ def on_message(client, userdata, message):
         positionStr = str(message.payload.decode("utf-8"))
         position = positionStr.split('*')
         # send the position to the API
-        requests.post(API_URL, json={'lat': position[0], 'lon': position[1]})
+        requests.post(API_URL, json={'lat': position[0], 'lon': position[1], 'battery': position[2]})
 
     if message.topic == 'dataService/getStoredPositions':
         print ('get stored positions')

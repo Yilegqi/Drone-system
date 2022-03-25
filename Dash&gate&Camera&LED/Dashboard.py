@@ -19,6 +19,7 @@ client = mqtt.Client('Dashboard')
 global_broker_address ="127.0.0.1"
 global_broker_port = 1884
 
+
 # treatment of messages received from gate through the global broker
 
 def on_message(client, userdata, message):
@@ -47,7 +48,19 @@ def on_message(client, userdata, message):
         imgtk = ImageTk.PhotoImage(image=img)
         panel.imgtk = imgtk
         panel.configure(image=imgtk)
-
+    if message.topic == 'cameraControllerAnswer/picturewithFaceRecognition':
+        img = base64.b64decode(message.payload)
+        # converting into numpy array from buffer
+        npimg = np.frombuffer(img, dtype=np.uint8)
+        # Decode to Original Frame
+        cv2image = cv.imdecode(npimg, 1)
+        dim = (300, 300)
+        # resize image
+        cv2image = cv.resize(cv2image, dim, interpolation=cv.INTER_AREA)
+        img = Image.fromarray(cv2image)
+        imgtk = ImageTk.PhotoImage(image=img)
+        panel.imgtk = imgtk
+        panel.configure(image=imgtk)
     if (message.topic == "autopilotControllerAnswer/droneAltitude"):
         answer = str(message.payload.decode("utf-8"))
         lbl['text'] = answer[:5]
@@ -55,6 +68,12 @@ def on_message(client, userdata, message):
         answer = str(message.payload.decode("utf-8"))
         lbl['text'] = answer[:5]
     if (message.topic == "autopilotControllerAnswer/droneGroundSpeed"):
+        answer = str(message.payload.decode("utf-8"))
+        lbl['text'] = answer[:5]
+    if(message.topic == "autopilotControllerAnswer/droneBatteryLevel"):
+        answer = str(message.payload.decode("utf-8"))
+        lbl['text'] = answer[:2]
+    if(message.topic == "autopilotControllerAnswer/droneRoll"):
         answer = str(message.payload.decode("utf-8"))
         lbl['text'] = answer[:5]
 
@@ -72,7 +91,7 @@ def on_message(client, userdata, message):
         cont = 0
         for dataItem in dataJson:
             table.insert(parent='', index='end', iid=cont, text='',
-                    values=(dataItem['time'], dataItem['lat'], dataItem['lon']))
+                    values=(dataItem['time'], dataItem['lat'], dataItem['lon'], dataItem['battery']))
             cont = cont + 1
 
         table.pack()
@@ -277,6 +296,8 @@ v1 = tk.StringVar()
 s1r1= tk.Radiobutton(autopilotGet,text="Altitude", variable=v1, value=1).grid(column=0, row=0, columnspan = 5, sticky=tk.W)
 s1r2= tk.Radiobutton(autopilotGet,text="Heading", variable=v1, value=2).grid(column=0, row=1, columnspan = 5, sticky=tk.W)
 s1r3= tk.Radiobutton(autopilotGet,text="Ground Speed", variable=v1, value=3).grid(column=0, row=2, columnspan = 5, sticky=tk.W)
+s1r4= tk.Radiobutton(autopilotGet,text="Battery Level", variable=v1, value=4).grid(column=0, row=3, columnspan = 5,sticky=tk.W)
+s1r5= tk.Radiobutton(autopilotGet,text="Roll", variable=v1, value=5).grid(column=0, row=4, columnspan = 5, sticky=tk.W)
 v1.set(1)
 
 def autopilotGetButtonClicked():
@@ -284,8 +305,12 @@ def autopilotGetButtonClicked():
         client.publish("autopilotControllerCommand/getDroneAltitude")
     elif v1.get() == "2":
         client.publish("autopilotControllerCommand/getDroneHeading")
-    else:
+    elif v1.get() == "3":
         client.publish("autopilotControllerCommand/getDroneGroundSpeed")
+    elif v1.get() == "4":
+        client.publish("autopilotControllerCommand/getBatteryLevel")
+    else:
+        client.publish("autopilotControllerCommand/getRoll")
 
 autopilotGetButton = tk.Button(autopilotGet, text="Get", bg='red', fg="white", width = 10, height=5, command=autopilotGetButtonClicked)
 autopilotGetButton.grid(column=5, row=0, columnspan=2, rowspan = 3, padx=10)
@@ -299,8 +324,12 @@ autopilotSet.pack( padx=20)
 
 
 
+
+alt = ''
 def takeOffButtonClicked():
     client.publish("autopilotControllerCommand/takeOff", metersEntry.get() )
+    global alt
+    alt = str(metersEntry.get())
 
 takeOffButton = tk.Button(autopilotSet, text="Take Off", bg='red', fg="white",  width = 10, command=takeOffButtonClicked)
 takeOffButton.grid(column=0, row=1, columnspan=2, sticky=tk.W)
@@ -334,12 +363,12 @@ lonLbl = tk.Label(autopilotSet, text=" ", width = 10, borderwidth=2, relief="sun
 lonLbl.grid(column=4, row=3,  columnspan=2,padx = 5 )
 
 def goToButtonClicked():
-    position = str (goTolatEntry.get()) + '*' + str(goTolonEntry.get())
+    position = str (goTolatEntry.get()) + '*' + str(goTolonEntry.get()) + '*' + str(goTosecondsEntry.get()) + '*' + alt
     client.publish("autopilotControllerCommand/goToPosition", position)
 
 
 
-goToButton = tk.Button(autopilotSet, text="Go To", bg='red', fg="white",  width = 10,  command=goToButtonClicked)
+goToButton = tk.Button(autopilotSet, text="Go To & seconds", bg='red', fg="white",  width = 20,  command=goToButtonClicked)
 goToButton.grid(column=0, row=4, pady = 5, sticky=tk.W)
 
 goTolatEntry = tk.Entry(autopilotSet, width = 10)
@@ -347,6 +376,11 @@ goTolatEntry.grid(column=2, row=4,  columnspan=2,padx = 5 )
 
 goTolonEntry = tk.Entry(autopilotSet, width = 10)
 goTolonEntry.grid(column=4, row=4,  columnspan=2,padx = 5 )
+
+goTosecondsEntry = tk.Entry(autopilotSet, width = 10)
+goTosecondsEntry.grid(column=6, row=4, columnspan=2, padx = 5)
+
+
 
 def returnToLaunchButtonClicked():
     client.publish("autopilotControllerCommand/returnToLaunch")
@@ -370,18 +404,20 @@ def openWindowToShowRecordedPositions():
     newWindow.geometry("400x400")
     table = ttk.Treeview(newWindow)
 
-    table['columns'] = ('time', 'latitude', 'longitude')
+    table['columns'] = ('time', 'latitude', 'longitude', 'battery')
 
     table.column("#0", width=0, stretch=tk.NO)
     table.column("time", anchor=tk.CENTER, width=150)
     table.column("latitude", anchor=tk.CENTER, width=80)
     table.column("longitude", anchor=tk.CENTER, width=80)
+    table.column("battery", anchor=tk.CENTER, width =80)
 
 
     table.heading("#0", text="", anchor=tk.CENTER)
     table.heading("time", text="Time", anchor=tk.CENTER)
     table.heading("latitude", text="Latitude", anchor=tk.CENTER)
     table.heading("longitude", text="Longitude", anchor=tk.CENTER)
+    table.heading("battery", text = "Battery", anchor=tk.CENTER)
 
     # requiere the stored positions from the data service
     client.publish("dataService/getStoredPositions")
@@ -450,14 +486,20 @@ def takePictureButtonClicked():
 takePictureButton = tk.Button(takePictureFrame, text="Take Picture", width=50, bg='red', fg="white", command=takePictureButtonClicked)
 takePictureButton.grid(column=0, row=0, pady = 20, padx = 20)
 
+def takePicturewithFaceRecongnitionButtonClicked():
+    print("Take picture with face recognition")
+    client.publish("cameraControllerCommand/takePicturewithFaceRecognition")
+
+takePicturewithFaceRecongnitionButton = tk.Button(takePictureFrame, text="Take Picture with FR", width=50, bg='red', fg="white", command=takePicturewithFaceRecongnitionButtonClicked)
+takePicturewithFaceRecongnitionButton.grid(column=1, row=0, pady = 20, padx = 20)
+
+
 img = Image.open("image1.jpg")
 img = img.resize((350, 350), Image.ANTIALIAS)
 img = ImageTk.PhotoImage(img)
 panel = tk.Label(takePictureFrame, image=img, borderwidth=2, relief="raised")
 panel.image = img
 panel.grid(column=0, row=1, columnspan=3, rowspan = 3)
-
-
 
 
 videoStreamFrame = tk.Frame(cameraControlFrame)

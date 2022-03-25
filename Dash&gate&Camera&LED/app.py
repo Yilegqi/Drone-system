@@ -29,7 +29,8 @@ def addData():
     new_data = {
         'time': str(now),
         'lat': request.json['lat'],
-        'lon': request.json['lon']
+        'lon': request.json['lon'],
+        'battery': request.json['battery']
     }
     # add the new position to the list (in memory)
     data.append(new_data)

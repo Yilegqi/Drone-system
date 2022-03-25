@@ -13,6 +13,7 @@ local_broker_port = 1883
 LEDSequenceOn = False
 
 
+
 def arm():
     """ Arms vehicle and fly to aTargetAltitude. """
     print("Basic pre-arm checks") # Don't try to arm until autopilot is ready
@@ -44,15 +45,17 @@ def sendPosition():
     # get the position and send it to the data service
     lat = vehicle.location.global_frame.lat
     lon = vehicle.location.global_frame.lon
-    position = str(lat) + '*' + str(lon)
-    print ("send new position")
+    batterylevel = vehicle.battery.level
+    position = str(lat) + '*' + str(lon) + '*' + str(batterylevel)
+    print ("send new position and batterylevel")
     client.publish("dataService/storePosition", position)
     # we will repeat this in 5 seconds
-    timer= threading.Timer(5.0, sendPosition)
+    timer= threading.Timer(seconds, sendPosition)
     timer.start()
 
+seconds = 5.0
+timer = threading.Timer(seconds, sendPosition)
 
-timer = threading.Timer(5.0, sendPosition)
 
 def on_message(client, userdata, message):
     global LEDSequenceOn
@@ -88,13 +91,17 @@ def on_message(client, userdata, message):
     if message.topic == 'autopilotControllerCommand/goToPosition':
         positionStr = str(message.payload.decode("utf-8"))
         position = positionStr.split ('*')
+        global seconds
         lat = float (position[0])
         lon = float (position[1])
-        point = dronekit.LocationGlobalRelative (lat,lon, 20)
+        if position[2] != '':
+            seconds = float (position[2])
+        alt = float(position[3])
+        point = dronekit.LocationGlobalRelative (lat, lon, alt)
         vehicle.simple_goto(point)
         # we start a procedure to get the drone position every 5 seconds
         # and send it to the data service (to be stored there)
-        timer = threading.Timer(5.0, sendPosition)
+        timer = threading.Timer(seconds, sendPosition)
         sendPosition()
 
     if message.topic == 'autopilotControllerCommand/returnToLaunch':
@@ -104,6 +111,13 @@ def on_message(client, userdata, message):
 
     if message.topic == 'autopilotControllerCommand/disarmDrone':
         vehicle.armed = True
+
+    if message.topic == 'autopilotControllerCommand/getBatteryLevel':
+        client.publish('autopilotControllerAnswer/droneBatteryLevel', vehicle.battery.level)
+
+    if message.topic == 'autopilotControllerCommand/getRoll':
+        client.publish('autopilotControllerAnswer/droneRoll', vehicle.attitude.roll)
+
 
 client = mqtt.Client("Autopilot controller")
 client.on_message = on_message
